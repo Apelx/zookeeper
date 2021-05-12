@@ -611,7 +611,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
      * QuorumVerifier implementation; default (majority).
      */
 
-    //last committed quorum verifier
+    //last committed quorum verifier 最后提交的法定验证者
     private QuorumVerifier quorumVerifier;
 
     //last proposed quorum verifier

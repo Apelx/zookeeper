@@ -799,14 +799,16 @@ public class QuorumCnxManager {
      * Check if all queues are empty, indicating that all messages have been delivered.
      */
     boolean haveDelivered() {
+        // queueSendMap: 维护了当前server与集群中所有其他server的 发送失败消息队列
         for (BlockingQueue<ByteBuffer> queue : queueSendMap.values()) {
             final int queueSize = queue.size();
             LOG.debug("Queue size: {}", queueSize);
+            // 只要有一个队列为空， 代表当前sever未与集群失联
             if (queueSize == 0) {
                 return true;
             }
         }
-
+        // 所有队列都不为空，代表当前server与集群失联了
         return false;
     }
 
