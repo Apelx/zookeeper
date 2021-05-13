@@ -642,6 +642,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     }
 
+    // zk每接受到一个来自客户端的数据，就会调用该方法，目的有两个
+    // 1. 检测会话是否存在
+    // 2. 若存在，重新计算会话的空闲超时时间点，更新session所在的会话桶
     void touch(ServerCnxn cnxn) throws MissingSessionException {
         if (cnxn == null) {
             return;
@@ -685,6 +688,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     }
 
     public synchronized void startup() {
+        // 根据服务状态开启
         startupWithServerState(State.RUNNING);
     }
 
@@ -699,9 +703,12 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
 
     private void startupWithServerState(State state) {
         if (sessionTracker == null) {
+            // 创建Session跟踪器
             createSessionTracker();
         }
+        // 开启session跟踪器
         startSessionTracker();
+
         setupRequestProcessors();
 
         startRequestThrottler();
@@ -1009,7 +1016,11 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         sessionTracker.setOwner(id, owner);
     }
 
+    // 使会话重新生效
+    // 当会话发生丢失后，对客户端重新连接上后进行处理
+    // 重新计算session所在会话桶
     protected void revalidateSession(ServerCnxn cnxn, long sessionId, int sessionTimeout) throws IOException {
+        // 只要会话存在返回true
         boolean rc = sessionTracker.touchSession(sessionId, sessionTimeout);
         if (LOG.isTraceEnabled()) {
             ZooTrace.logTraceMessage(
@@ -1017,6 +1028,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 ZooTrace.SESSION_TRACE_MASK,
                 "Session 0x" + Long.toHexString(sessionId) + " is valid: " + rc);
         }
+        // 根据rc是否存在，采用不同会话处理方式
         finishSessionInit(cnxn, rc);
     }
 
@@ -1035,6 +1047,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     public void finishSessionInit(ServerCnxn cnxn, boolean valid) {
         // register with JMX
         try {
+            // 如果当前session有效，则同意该连接的注册
             if (valid) {
                 if (serverCnxnFactory != null && serverCnxnFactory.cnxns.contains(cnxn)) {
                     serverCnxnFactory.registerConnection(cnxn);
@@ -1047,6 +1060,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         }
 
         try {
+            // 构建连接响应对象
             ConnectResponse rsp = new ConnectResponse(
                 0,
                 valid ? cnxn.getSessionTimeout() : 0,
@@ -1063,6 +1077,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             baos.close();
             ByteBuffer bb = ByteBuffer.wrap(baos.toByteArray());
             bb.putInt(bb.remaining() - 4).rewind();
+            // 向客户端发送连接响应对象
             cnxn.sendBuffer(bb);
 
             if (valid) {
@@ -1071,9 +1086,10 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                     Long.toHexString(cnxn.getSessionId()),
                     cnxn.getSessionTimeout(),
                     cnxn.getRemoteSocketAddress());
+                // 如果session有效，则启用连接（底层netty）
                 cnxn.enableRecv();
             } else {
-
+                // 如果session无效，向客户端发送关闭连接响应
                 LOG.info(
                     "Invalid session 0x{} for client {}, probably expired",
                     Long.toHexString(cnxn.getSessionId()),
@@ -1128,7 +1144,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 }
             }
         }
-        requestThrottler.submitRequest(si);
+        requestThrottler.submitR equest(si);
     }
 
     public void submitRequestNow(Request si) {

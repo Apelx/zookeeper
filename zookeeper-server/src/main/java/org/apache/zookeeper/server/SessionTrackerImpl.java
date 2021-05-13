@@ -108,10 +108,14 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
 
     public SessionTrackerImpl(SessionExpirer expirer, ConcurrentMap<Long, Integer> sessionsWithTimeout, int tickTime, long serverId, ZooKeeperServerListener listener) {
         super("SessionTracker", listener);
+        // 过期时间
         this.expirer = expirer;
+        // tickTime: 配置的一个时间单位大小，初始化过期时间间隔，即桶的大小
         this.sessionExpiryQueue = new ExpiryQueue<SessionImpl>(tickTime);
+        // session过期时间（map: key:每个服务id value:过期时间）
         this.sessionsWithTimeout = sessionsWithTimeout;
         this.nextSessionId.set(initializeNextSessionId(serverId));
+        // 遍历每个server, 跟踪每个server的session
         for (Entry<Long, Integer> e : sessionsWithTimeout.entrySet()) {
             trackSession(e.getKey(), e.getValue());
         }
@@ -157,15 +161,23 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
     public void run() {
         try {
             while (running) {
+                // 获取 当前时间 到 初始会话时会话桶  之间的差值，如果当前时间超过会话桶时间，返回0
                 long waitTime = sessionExpiryQueue.getWaitTime();
                 if (waitTime > 0) {
+                    // 差值大于0，说明当前时间还没有超过初始会话时会话桶，即还未超时，则等待响应时间，再继续
                     Thread.sleep(waitTime);
                     continue;
                 }
 
+                // 代码走到这，说明需要处理会话桶的超时了
+
+
+                // 将桶中所有的会话，从头部一条一条的取出，全部清除
                 for (SessionImpl s : sessionExpiryQueue.poll()) {
                     ServerMetrics.getMetrics().STALE_SESSIONS_EXPIRED.add(1);
+                    // 设置session为关闭状态
                     setSessionClosing(s.sessionId);
+                    // 过期所有会话
                     expirer.expire(s);
                 }
             }
@@ -187,13 +199,14 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
             logTraceTouchClosingSession(sessionId, timeout);
             return false;
         }
-
+        // 更新session过期时间（更新过期时间会话桶）
         updateSessionExpiry(s, timeout);
         return true;
     }
 
     private void updateSessionExpiry(SessionImpl s, int timeout) {
         logTraceTouchSession(s.sessionId, timeout, "");
+        // 更新指定session的过期时间
         sessionExpiryQueue.update(s, timeout);
     }
 
@@ -269,6 +282,7 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
 
         SessionImpl session = sessionsById.get(id);
         if (session == null) {
+            // 创建一个会话
             session = new SessionImpl(id, sessionTimeout);
         }
 
@@ -291,7 +305,7 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
                 "SessionTrackerImpl --- " + actionStr
                 + " session 0x" + Long.toHexString(id) + " " + sessionTimeout);
         }
-
+        // 更新session过期时间
         updateSessionExpiry(session, sessionTimeout);
         return added;
     }
